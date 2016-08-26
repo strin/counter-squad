@@ -153,9 +153,9 @@ def tokenize_paragraphs(data):
         raw_context = paragraph['context']
         context = tokenize_paragraph(raw_context)
         paragraph['context.sents'] = context
-        context = word_tokenize(raw_context)
+        # context = word_tokenize(raw_context)
+        context = sum(context, [])
         paragraph['context.tokens'] = context
-        print(paragraph['context.tokens'])
         for qa in paragraph['qas']:
             qa['question.tokens'] = word_tokenize(qa['question'])
             for raw_answer in qa['answers']:
@@ -244,27 +244,6 @@ def constituents_in_tree(parsetree):
     return results
 
 
-def parse_paragraph(paragraph, parser=None):
-    from nltk.parse.stanford import StanfordParser
-    if not parser:
-        print('creating parser')
-        parser = StanfordParser('/home/durin/software/stanford-parser-full-2015-12-09/stanford-parser.jar',
-                               '/home/durin/software/stanford-parser-full-2015-12-09/stanford-parser-3.6.0-models.jar')
-    raw_sentences = sent_tokenize(paragraph)
-    sentences = []
-    for raw_sentence in raw_sentences:
-        sentence = {
-            'parsetree': str(list(parser.raw_parse(raw_sentence))[0]),
-        }
-        sentences.append(sentence)
-    all_tokens = tokenize_paragraph(paragraph)
-    for (sentence, tokens) in zip(sentences, all_tokens):
-        sentence['words'] = tokens
-
-    return {
-        'sentences': sentences
-    }
-
 
 def create_stanford_parser():
     from nltk.parse.stanford import StanfordParser
@@ -287,12 +266,11 @@ def extract_constituents_spans(data, CORENLP_IP="0.0.0.0", CORENLP_PORT=3456):
             if pi % 100 == 0: # clean up memory by creating a new parser..
                 parser = create_stanford_parser()
 
-            results = parse_paragraph(paragraph['context'], parser=parser)
+            trees = parser.parse_sents(paragraph['context.sents'])
             spans = []
-            sentences = []
-            for sentence in results['sentences']:
-                results = constituents_in_tree(sentence['parsetree'])
-                sentences.append(sentence['words'])
+            for tree in trees:
+                tree = str(list(tree)[0])
+                results = constituents_in_tree(tree)
                 spans.append(results)
             paragraph['spans'] = spans
             print(pi, '/', len(data))
@@ -371,12 +349,13 @@ def filter_vocab(data, vocab):
 if __name__ == '__main__':
     loader = Loader('data/train-v1.1.json')
     data = merge_paragraphs(loader.data)
+    data = data[:100]
     print('validating')
     validate_answer_start(data)
     print('cleaning data')
     data = clean_paragraphs(data)
     print('tokenizing data')
     data = tokenize_paragraphs(data)
-    data = data[:100]
+    print(data[0])
     data = extract_constituents_spans(data)
     write_json(data, 'output/train-v1.1.small.json')

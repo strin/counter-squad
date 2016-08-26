@@ -5,6 +5,7 @@ from data import create_vocab, filter_vocab
 from utils import load_json, write_json, create_idict, choice, locate
 from db import KeyValueStore
 import numpy as np
+import traceback
 from keras.layers import Input, merge
 from keras.layers.embeddings import Embedding
 from keras.layers.core import Lambda, Dense
@@ -15,7 +16,7 @@ import keras.backend as K
 
 word2vec = KeyValueStore('word2vec')
 
-def create_x_y(data, vocab, stats, verbose=False):
+def create_x_y(data, vocab, stats, test=False, verbose=False):
     ''' create input-output pairs for neural network training
     the input is (#examples,
     '''
@@ -32,20 +33,21 @@ def create_x_y(data, vocab, stats, verbose=False):
         if verbose:
             print(name, [ivocab[v] for v in sen])
 
-    for paragraph in data:
-        context = paragraph['context.tokens']
-        all_spans = sum(paragraph['spans'], [])
-        for qa in paragraph['qas']:
-            # extract question.
-            q = np.zeros(max_q)
-            for (i, word) in enumerate(qa['question.tokens']):
-                q[i] = vocab[word]
-            for answer in qa['answers']:
-                def extract(pos):
+    try:
+        for paragraph in data:
+            context = paragraph['context.tokens']
+            all_spans = sum(paragraph['spans'], [])
+            for qa in paragraph['qas']:
+                # extract question.
+                q = np.zeros(max_q)
+                for (i, word) in enumerate(qa['question.tokens']):
+                    q[i] = vocab[word]
+
+                def extract(pos, span):
                     print_sentence('question', q)
                     # extract span.
                     s = np.zeros(max_span)
-                    for (i, word) in enumerate(answer['text.tokens']):
+                    for (i, word) in enumerate(span):
                         s[i] = vocab[word]
                     print_sentence('span', s)
                     # extract context left.
@@ -58,38 +60,42 @@ def create_x_y(data, vocab, stats, verbose=False):
                             cl[i] = vocab[context[ind]]
                     print_sentence('cl', cl)
                     for i in range(surround_size):
-                        ind = answer_start + len(answer['text.tokens']) + i
+                        ind = answer_start + len(span) + i
                         if ind < len(context):
                             cr[i] = vocab[context[ind]]
                     print_sentence('cr', cr)
                     return (s, q, cl, cr)
 
-                try:
-                    X.append(extract(answer['answer_start']))
-                    Y.append(1.)
-                    for span in choice(all_spans, neg_samples, replace=True):
-                        def replace(l, ws, wt):
-                            new_l = []
-                            for w in l:
-                                if w == ws:
-                                    new_l.append(wt)
-                                else:
-                                    new_l.append(w)
-                            return new_l
-                        span = replace(span, '-LRB-', '(')
-                        span = replace(span, '-RRB-', ')')
-                        span = replace(context, '.', '')
-                        pos = locate(context, span)
-                        X.append(extract(pos))
-                        Y.append(0.)
+                if not test:
+                    for answer in qa['answers']:
+                        X.append(extract(answer['answer_start'], answer['text.tokens']))
+                        Y.append(1.)
+                    spans = choice(all_spans, neg_samples, replace=True)
+                if test:
+                    spans = all_spans
+                for span in spans:
+                    def replace(l, ws, wt):
+                        new_l = []
+                        for w in l:
+                            if w == ws:
+                                new_l.append(wt)
+                            else:
+                                new_l.append(w)
+                        return new_l
+                    span = replace(span, '-LRB-', '(')
+                    span = replace(span, '-RRB-', ')')
+                    pos = locate(context, span)
+                    X.append(extract(pos, span))
+                    Y.append(0.)
 
-                except Exception as e:
-                    print('context', ' '.join(context))
-                    print('answer', answer)
-                    print('span', span)
-                    print(e.message)
-                    import pdb; pdb.set_trace();
-                    #raise e
+    except Exception as e:
+        print('context', context)
+        print('answer', answer)
+        print('span', span)
+        print(e.message)
+        traceback.print_exc()
+        import pdb; pdb.set_trace();
+        #raise e
 
     S = np.array([x[0] for x in X])
     Q = np.array([x[1] for x in X])
@@ -97,6 +103,26 @@ def create_x_y(data, vocab, stats, verbose=False):
     CR = np.array([x[3] for x in X])
     Y = np.array(Y)
     return (S, Q, CL, CR, Y)
+
+
+def predict_span(model, data, vocab, config):
+    data = filter_vocab(data, vocab)
+    (S, Q, CL, CR, Y) = create_x_y(data, vocab, config, test=True)
+    all_probs = model.predict([CL, CR, Q])
+    print('probs', all_probs)
+    pt = 0
+    predictions = {}
+    for paragraph in data:
+        context = paragraph['context.tokens']
+        all_spans = sum(paragraph['spans'], [])
+        for qa in paragraph['qas']:
+            probs = all_probs[pt : pt + len(all_spans)]
+            pred_ind = np.argmax(probs)
+            pred_span = all_spans[pred_ind]
+            pt += len(all_spans)
+            qid = qa['id']
+            predictions[qid] = pred_span
+    return predictions
 
 
 def compile(config, vocab):
@@ -165,6 +191,11 @@ if __name__ == '__main__':
                         batch_size=64, nb_epoch=3,
                         verbose=1
                         )
+
+    predictions = predict_span(model, data, vocab, config)
+    print('predicing')
+    pprint(predictions)
+
 
 
 
