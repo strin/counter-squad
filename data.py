@@ -135,6 +135,14 @@ def clean_paragraphs(data):
     return data
 
 
+def tokenize_paragraph(paragraph):
+    raw_sentences = sent_tokenize(paragraph)
+    sentences = []
+    for raw_sentence in raw_sentences:
+        sentences.append(word_tokenize(raw_sentence))
+    return sentences
+
+
 def tokenize_paragraphs(data):
     ''' After paragraphs have been cleaned up.
     '''
@@ -143,6 +151,9 @@ def tokenize_paragraphs(data):
     error_count = 0
     for paragraph in data:
         raw_context = paragraph['context']
+        context = tokenize_paragraph(raw_context)
+        paragraph['context.sents'] = context
+        # context = sum(context, [])
         context = word_tokenize(raw_context)
         paragraph['context.tokens'] = context
         for qa in paragraph['qas']:
@@ -233,14 +244,6 @@ def constituents_in_tree(parsetree):
     return results
 
 
-def tokenize_paragraph(paragraph):
-    raw_sentences = sent_tokenize(paragraph)
-    sentences = []
-    for raw_sentence in raw_sentences:
-        sentences.append(word_tokenize(raw_sentence))
-    return sentences
-
-
 def parse_paragraph(paragraph, parser=None):
     from nltk.parse.stanford import StanfordParser
     if not parser:
@@ -320,23 +323,24 @@ def create_vocab(data):
         '<unk>': 1
     }
 
-    stats['max_sl'] = 0
+    stats['max_span'] = 0
+    stats['max_q'] = 0
     def update_vocab(sentence):
-        if len(sentence) > stats['max_sl']:
-            stats['max_sl'] = len(sentence)
         for word in sentence:
             if word in vocab:
                 continue
             vocab[word] = len(vocab)
 
     for (pi, paragraph) in enumerate(data):
-        sentences = paragraph['sentences']
-        for sentence in sentences:
-            update_vocab(sentence)
+        update_vocab(paragraph['context.tokens'])
         for qa in paragraph['qas']:
+            update_vocab(qa['question.tokens'])
+            if len(qa['question.tokens']) > stats['max_q']:
+                stats['max_q'] = len(qa['question.tokens'])
             for answer in qa['answers']:
-                update_vocab(answer['text.sent'])
-            update_vocab(qa['question.sent'])
+                if len(answer['text.tokens']) > stats['max_span']:
+                    stats['max_span'] = len(answer['text.tokens'])
+                update_vocab(answer['text.tokens'])
 
     stats['vocab_size'] = len(vocab)
     return (vocab, stats)
@@ -344,15 +348,20 @@ def create_vocab(data):
 
 def filter_vocab(data, vocab):
     data = deepcopy(data)
+    def filter_word(word):
+        if word not in vocab:
+            return '<unk>'
+        return word
     for (pi, paragraph) in enumerate(data):
-        sentences = paragraph['sentences']
+        sentences = paragraph['context.sents']
         for i, _ in enumerate(sentences):
-            sentences[i] = filter(lambda word: word in vocab, sentences[i])
+            sentences[i] = map(filter_word, sentences[i])
+        paragraph['context.tokens'] = map(filter_word, paragraph['context.tokens'])
 
         for qa in paragraph['qas']:
             for answer in qa['answers']:
-                answer['text.sent'] = filter(lambda word: word in vocab, answer['text.sent'])
-            qa['question.sent'] = filter(lambda word: word in vocab, qa['question.sent'])
+                answer['text.tokens'] = map(filter_word, answer['text.tokens'])
+            qa['question.tokens'] = map(filter_word, qa['question.tokens'])
     return data
 
 
@@ -361,11 +370,10 @@ if __name__ == '__main__':
     data = merge_paragraphs(loader.data)
     print('validating')
     validate_answer_start(data)
-    data = data[:100]
     print('cleaning data')
     data = clean_paragraphs(data)
     print('tokenizing data')
     data = tokenize_paragraphs(data)
+    data = data[:100]
     data = extract_constituents_spans(data)
-    data = extract_qa_sent(data)
     write_json(data, 'output/train-v1.1.small.json')
