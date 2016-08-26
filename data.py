@@ -19,7 +19,7 @@ def word_tokenize(sent):
     tokens = nltk.word_tokenize(sent)
     new_tokens = []
     for token in tokens:
-        if token[-1] in ['.']:
+        if token != '.' and token[-1] in ['.']:
             token = token[:-1]
         new_tokens.append(token)
     return new_tokens
@@ -153,9 +153,9 @@ def tokenize_paragraphs(data):
         raw_context = paragraph['context']
         context = tokenize_paragraph(raw_context)
         paragraph['context.sents'] = context
-        # context = sum(context, [])
         context = word_tokenize(raw_context)
         paragraph['context.tokens'] = context
+        print(paragraph['context.tokens'])
         for qa in paragraph['qas']:
             qa['question.tokens'] = word_tokenize(qa['question'])
             for raw_answer in qa['answers']:
@@ -341,6 +341,9 @@ def create_vocab(data):
                 if len(answer['text.tokens']) > stats['max_span']:
                     stats['max_span'] = len(answer['text.tokens'])
                 update_vocab(answer['text.tokens'])
+        for span in paragraph['spans']:
+            if len(span) > stats['max_span']:
+                stats['max_span'] = len(span)
 
     stats['vocab_size'] = len(vocab)
     return (vocab, stats)

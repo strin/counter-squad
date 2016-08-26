@@ -2,7 +2,7 @@ from __future__ import print_function
 from __init__ import *
 from pprint import pprint
 from data import create_vocab, filter_vocab
-from utils import load_json, write_json, create_idict
+from utils import load_json, write_json, create_idict, choice, locate
 from db import KeyValueStore
 import numpy as np
 from keras.layers import Input, merge
@@ -15,34 +15,33 @@ import keras.backend as K
 
 word2vec = KeyValueStore('word2vec')
 
-def create_x_y(data, vocab, stats):
+def create_x_y(data, vocab, stats, verbose=False):
     ''' create input-output pairs for neural network training
     the input is (#examples,
     '''
-    data = filter_vocab(data, vocab)
+    #data = filter_vocab(data, vocab)
     max_span = stats['max_span']
     max_q = stats['max_q']
     surround_size = stats['surround_size']
+    neg_samples = stats['neg_samples']
     ivocab = create_idict(vocab)
-    S = []
-    CL = []
-    CR = []
-    Q = []
+    X = []
     Y = []
 
     def print_sentence(name, sen):
-        # print(name, [ivocab[v] for v in sen])
-        return
+        if verbose:
+            print(name, [ivocab[v] for v in sen])
 
     for paragraph in data:
         context = paragraph['context.tokens']
+        all_spans = sum(paragraph['spans'], [])
         for qa in paragraph['qas']:
             # extract question.
             q = np.zeros(max_q)
             for (i, word) in enumerate(qa['question.tokens']):
                 q[i] = vocab[word]
             for answer in qa['answers']:
-                try:
+                def extract(pos):
                     print_sentence('question', q)
                     # extract span.
                     s = np.zeros(max_span)
@@ -50,7 +49,7 @@ def create_x_y(data, vocab, stats):
                         s[i] = vocab[word]
                     print_sentence('span', s)
                     # extract context left.
-                    answer_start = answer['answer_start']
+                    answer_start = pos
                     cl = np.zeros(surround_size)
                     cr = np.zeros(surround_size)
                     for i in range(surround_size):
@@ -63,25 +62,39 @@ def create_x_y(data, vocab, stats):
                         if ind < len(context):
                             cr[i] = vocab[context[ind]]
                     print_sentence('cr', cr)
+                    return (s, q, cl, cr)
 
-                    S.append(s)
-                    CL.append(cl)
-                    CR.append(cr)
-                    Q.append(q)
+                try:
+                    X.append(extract(answer['answer_start']))
                     Y.append(1.)
+                    for span in choice(all_spans, neg_samples, replace=True):
+                        def replace(l, ws, wt):
+                            new_l = []
+                            for w in l:
+                                if w == ws:
+                                    new_l.append(wt)
+                                else:
+                                    new_l.append(w)
+                            return new_l
+                        span = replace(span, '-LRB-', '(')
+                        span = replace(span, '-RRB-', ')')
+                        span = replace(context, '.', '')
+                        pos = locate(context, span)
+                        X.append(extract(pos))
+                        Y.append(0.)
 
                 except Exception as e:
-                    print('context', context)
+                    print('context', ' '.join(context))
                     print('answer', answer)
-                    print('ind', ind)
+                    print('span', span)
                     print(e.message)
                     import pdb; pdb.set_trace();
-                    raise e
+                    #raise e
 
-    S = np.array(S)
-    Q = np.array(Q)
-    CL = np.array(CL)
-    CR = np.array(CR)
+    S = np.array([x[0] for x in X])
+    Q = np.array([x[1] for x in X])
+    CL = np.array([x[2] for x in X])
+    CR = np.array([x[3] for x in X])
     Y = np.array(Y)
     return (S, Q, CL, CR, Y)
 
@@ -98,17 +111,17 @@ def compile(config, vocab):
     embed_layer = Embedding(vocab_size, hidden_dim, weights=[word_weights])
     sum_layer = Lambda(lambda emb: K.sum(emb, axis=1), output_shape=lambda input_shape: (input_shape[0], input_shape[2]))
     model_cl = Sequential()
-    input_cl = Input(shape=(stats['surround_size'],), name='in_cl')
+    input_cl = Input(shape=(config['surround_size'],), name='in_cl')
     x_cl = embed_layer(input_cl)
     x_cl = sum_layer(x_cl)
     #model_cl.add(Lambda(lambda emb: K.sum(emb, axis=1),
     #                    output_shape=lambda input_shape: (input_shape[0], input_shape[2])
     #            ))
-    input_cr = Input(shape=(stats['surround_size'],), name='in_cr')
+    input_cr = Input(shape=(config['surround_size'],), name='in_cr')
     x_cr = embed_layer(input_cr)
     x_cr = sum_layer(x_cr)
 
-    input_q = Input(shape=(stats['max_q'],), name='in_q')
+    input_q = Input(shape=(config['max_q'],), name='in_q')
     x_q = embed_layer(input_q)
     x_q = sum_layer(x_q)
 
@@ -132,17 +145,19 @@ def compile(config, vocab):
 if __name__ == '__main__':
     data = load_json('output/train-v1.1.small.json')
     (vocab, stats) = create_vocab(data)
-    print('vocab stats:')
-    stats['surround_size'] = 10
-    pprint(stats)
-    print('creating x y')
-    (S, Q, CL, CR, Y) = create_x_y(data, vocab, stats)
-
     config = {
         'hidden_dim': 300,
-        'lr': 1e-3
+        'lr': 1e-3,
+        'neg_samples': 10,
+        'surround_size': 10
     }
     config.update(stats)
+    print('config = ')
+    pprint(config)
+
+    print('creating x y')
+    (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
+
     model = compile(config, vocab)
 
     print('training starts')
