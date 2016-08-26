@@ -28,7 +28,6 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     neg_samples = stats['neg_samples']
     ivocab = create_idict(vocab)
     X = []
-    Y = []
     def print_sentence(name, sen):
         if verbose:
             print(name, [ivocab[v] for v in sen])
@@ -68,12 +67,10 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
 
                 if not test:
                     for answer in qa['answers']:
-                        verbose=True
-                        X.append(extract(answer['answer_start'], answer['text.tokens']))
-                        Y.append(1.)
-                        verbose=False
+                        X.append(extract(answer['answer_start'], answer['text.tokens']) + (1.,))
                     # spans = choice(all_spans, neg_samples, replace=True)
                     spans = all_spans
+                    print(len(all_spans))
                 if test:
                     spans = all_spans
                 for span in spans:
@@ -90,8 +87,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     span = replace(span, '-LSB-', '[')
                     span = replace(span, '-RSB-', ']')
                     pos = locate(context, span)
-                    X.append(extract(pos, span))
-                    Y.append(0.)
+                    X.append(extract(pos, span) + (0.,))
 
     except Exception as e:
         print('context', context)
@@ -108,13 +104,12 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     Q = np.array([x[1] for x in X])
     CL = np.array([x[2] for x in X])
     CR = np.array([x[3] for x in X])
-    Y = np.array(Y)
+    Y = np.array([x[4] for x in X])
     return (S, Q, CL, CR, Y)
 
 
 def predict_span(model, data, vocab, config):
     data = filter_vocab(data, vocab, config)
-    import pdb; pdb.set_trace();
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config, test=True)
     all_probs = model.predict([CL, CR, Q])
     pt = 0
@@ -187,7 +182,7 @@ def compile(config, vocab):
 
 if __name__ == '__main__':
     data = load_json('output/train-v1.1.small.json')
-    data = [data[0]]
+    data = data[:1]
     (vocab, stats) = create_vocab(data)
     config = {
         'hidden_dim': 300,
@@ -201,13 +196,12 @@ if __name__ == '__main__':
 
     print('creating x y')
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
-    print(Y)
 
     model = compile(config, vocab)
 
     print('training starts')
     history = model.fit([CL, CR, Q], Y,
-                        batch_size=64, nb_epoch=500,
+                        batch_size=64, nb_epoch=50,
                         verbose=1
                         )
 

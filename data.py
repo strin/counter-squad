@@ -326,6 +326,20 @@ def create_vocab(data):
                     stats['max_span'] = len(answer['text.tokens'])
                 update_vocab(answer['text.tokens'])
 
+    stats['max_num_span'] = 0
+    for (pi, paragraph) in enumerate(data):
+        new_spans = []
+        for spans in paragraph['spans']:
+            new_span = []
+            for span in spans:
+                if len(span) > stats['max_span']:
+                    continue
+                new_span.append(span)
+            new_spans.append(new_span)
+        paragraph['spans'] = new_spans
+        if len(sum(new_spans, [])) > stats['max_num_span']:
+            stats['max_num_span'] = len(sum(new_spans, []))
+
     stats['vocab_size'] = len(vocab)
     return (vocab, stats)
 
@@ -360,9 +374,10 @@ def filter_vocab(data, vocab, stats):
 
 
 if __name__ == '__main__':
-    loader = Loader('data/train-v1.1.json')
+    loader = Loader('data/dev-v1.1.json')
     data = merge_paragraphs(loader.data)
-    data = data[:1000]
+    print('data size', len(data))
+    # data = data[:1000]
     print('validating')
     validate_answer_start(data)
     print('cleaning data')
@@ -371,4 +386,4 @@ if __name__ == '__main__':
     data = tokenize_paragraphs(data)
     print(data[0])
     data = extract_constituents_spans(data)
-    write_json(data, 'output/train-v1.1.small.json')
+    write_json(data, 'output/dev-v1.1.json')
