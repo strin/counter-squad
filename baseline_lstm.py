@@ -68,9 +68,12 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
 
                 if not test:
                     for answer in qa['answers']:
+                        verbose=True
                         X.append(extract(answer['answer_start'], answer['text.tokens']))
                         Y.append(1.)
-                    spans = choice(all_spans, neg_samples, replace=True)
+                        verbose=False
+                    # spans = choice(all_spans, neg_samples, replace=True)
+                    spans = all_spans
                 if test:
                     spans = all_spans
                 for span in spans:
@@ -111,6 +114,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
 
 def predict_span(model, data, vocab, config):
     data = filter_vocab(data, vocab, config)
+    import pdb; pdb.set_trace();
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config, test=True)
     all_probs = model.predict([CL, CR, Q])
     pt = 0
@@ -165,8 +169,8 @@ def compile(config, vocab):
     x = merge([x_cl, x_cr, x_q], mode='concat')
     #x = merge([x_cl, x_cr, x_q], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
     #          output_shape=lambda input_shape: (input_shape[0], 1))
-    x = Dense(100, activation='relu')(x)
-    x = Dense(100, activation='relu')(x)
+    x = Dense(1000, activation='relu')(x)
+    x = Dense(1000, activation='relu')(x)
     x = Dense(1, activation='sigmoid')(x)
 
     model = Model(input=[input_cl, input_cr, input_q], output=x)
@@ -187,7 +191,7 @@ if __name__ == '__main__':
     (vocab, stats) = create_vocab(data)
     config = {
         'hidden_dim': 300,
-        'lr': 1e-3,
+        'lr': 1e-4,
         'neg_samples': 1,
         'surround_size': 10
     }
@@ -203,7 +207,7 @@ if __name__ == '__main__':
 
     print('training starts')
     history = model.fit([CL, CR, Q], Y,
-                        batch_size=64, nb_epoch=5,
+                        batch_size=64, nb_epoch=500,
                         verbose=1
                         )
 
