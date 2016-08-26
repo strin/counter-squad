@@ -259,24 +259,30 @@ def extract_constituents_spans(data, CORENLP_IP="0.0.0.0", CORENLP_PORT=3456):
     #server = jsonrpc.ServerProxy(jsonrpc.JsonRpc20(),
     #                             jsonrpc.TransportTcpIp(addr=(CORENLP_IP, CORENLP_PORT), timeout=1000.
     #                            ))
+    parser = create_stanford_parser()
     data = deepcopy(data)
-    for (pi, paragraph) in enumerate(data):
+    batching = 5   # batching before send to java.
+    for pi in range(0, len(data), batching):
         try:
+            sents = []
+            for paragraph in data[pi : pi + batching]:
+                sents.extend(paragraph['context.sents'])
             # results = json.loads(server.parse(paragraph['context'])) # JavaNLP.
-            if pi % 100 == 0: # clean up memory by creating a new parser..
-                parser = create_stanford_parser()
-
-            trees = parser.parse_sents(paragraph['context.sents'])
-            spans = []
-            for tree in trees:
-                tree = str(list(tree)[0])
-                results = constituents_in_tree(tree)
-                spans.append(results)
-            paragraph['spans'] = spans
+            trees = list(parser.parse_sents(sents))
+            tree_i = 0
+            for paragraph in data[pi : pi + batching]:
+                spans = []
+                for sent in paragraph['context.sents']:
+                    tree = str(list(trees[tree_i])[0])
+                    results = constituents_in_tree(tree)
+                    spans.append(results)
+                    tree_i += 1
+                paragraph['spans'] = spans
             print(pi, '/', len(data))
         except Exception as e:
             pprint(paragraph)
             traceback.print_exc()
+            import pdb; pdb.set_trace();
             raise e
     return data
 
@@ -319,15 +325,12 @@ def create_vocab(data):
                 if len(answer['text.tokens']) > stats['max_span']:
                     stats['max_span'] = len(answer['text.tokens'])
                 update_vocab(answer['text.tokens'])
-        for span in paragraph['spans']:
-            if len(span) > stats['max_span']:
-                stats['max_span'] = len(span)
 
     stats['vocab_size'] = len(vocab)
     return (vocab, stats)
 
 
-def filter_vocab(data, vocab):
+def filter_vocab(data, vocab, stats):
     data = deepcopy(data)
     def filter_word(word):
         if word not in vocab:
@@ -343,13 +346,23 @@ def filter_vocab(data, vocab):
             for answer in qa['answers']:
                 answer['text.tokens'] = map(filter_word, answer['text.tokens'])
             qa['question.tokens'] = map(filter_word, qa['question.tokens'])
+
+        new_spans = []
+        for spans in paragraph['spans']:
+            new_span = []
+            for span in spans:
+                if len(span) > stats['max_span']:
+                    continue
+                new_span.append(span)
+            new_spans.append(new_span)
+        paragraph['spans'] = new_spans
     return data
 
 
 if __name__ == '__main__':
     loader = Loader('data/train-v1.1.json')
     data = merge_paragraphs(loader.data)
-    data = data[:100]
+    data = data[:1000]
     print('validating')
     validate_answer_start(data)
     print('cleaning data')

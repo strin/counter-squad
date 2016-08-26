@@ -13,6 +13,7 @@ from keras.engine.topology import Merge
 from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
 import keras.backend as K
+import random
 
 word2vec = KeyValueStore('word2vec')
 
@@ -20,7 +21,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     ''' create input-output pairs for neural network training
     the input is (#examples,
     '''
-    #data = filter_vocab(data, vocab)
+    data = filter_vocab(data, vocab, stats)
     max_span = stats['max_span']
     max_q = stats['max_q']
     surround_size = stats['surround_size']
@@ -28,7 +29,6 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     ivocab = create_idict(vocab)
     X = []
     Y = []
-
     def print_sentence(name, sen):
         if verbose:
             print(name, [ivocab[v] for v in sen])
@@ -84,6 +84,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                         return new_l
                     span = replace(span, '-LRB-', '(')
                     span = replace(span, '-RRB-', ')')
+                    span = replace(span, '-LSB-', '[')
+                    span = replace(span, '-RSB-', ']')
                     pos = locate(context, span)
                     X.append(extract(pos, span))
                     Y.append(0.)
@@ -97,6 +99,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
         import pdb; pdb.set_trace();
         #raise e
 
+    if not test:
+        random.shuffle(X)
     S = np.array([x[0] for x in X])
     Q = np.array([x[1] for x in X])
     CL = np.array([x[2] for x in X])
@@ -106,10 +110,9 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
 
 
 def predict_span(model, data, vocab, config):
-    data = filter_vocab(data, vocab)
+    data = filter_vocab(data, vocab, config)
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config, test=True)
     all_probs = model.predict([CL, CR, Q])
-    print('probs', all_probs)
     pt = 0
     predictions = {}
     for paragraph in data:
@@ -117,7 +120,7 @@ def predict_span(model, data, vocab, config):
         all_spans = sum(paragraph['spans'], [])
         for qa in paragraph['qas']:
             probs = all_probs[pt : pt + len(all_spans)]
-            pred_ind = np.argmax(probs)
+            pred_ind = np.argmax(probs, axis=0)
             pred_span = all_spans[pred_ind]
             pt += len(all_spans)
             qid = qa['id']
@@ -132,8 +135,16 @@ def compile(config, vocab):
     print('vocab size', vocab_size)
     print('initializing weights from db')
     word_weights = np.zeros((vocab_size, hidden_dim))
-    for (wi, word) in enumerate(vocab):
-        word_weights[wi] = np.array(word2vec[word])
+    for word in vocab:
+        wi = vocab[word]
+        if word == '<none>':
+            continue
+        vec = word2vec[word]
+        if not vec:
+            print('warning: word2vec OOV', word)
+            word_weights[wi] = np.array(word2vec['<unk>'])
+        else:
+            word_weights[wi] = np.array(vec)
     embed_layer = Embedding(vocab_size, hidden_dim, weights=[word_weights])
     sum_layer = Lambda(lambda emb: K.sum(emb, axis=1), output_shape=lambda input_shape: (input_shape[0], input_shape[2]))
     model_cl = Sequential()
@@ -152,6 +163,8 @@ def compile(config, vocab):
     x_q = sum_layer(x_q)
 
     x = merge([x_cl, x_cr, x_q], mode='concat')
+    #x = merge([x_cl, x_cr, x_q], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
+    #          output_shape=lambda input_shape: (input_shape[0], 1))
     x = Dense(100, activation='relu')(x)
     x = Dense(100, activation='relu')(x)
     x = Dense(1, activation='sigmoid')(x)
@@ -162,7 +175,7 @@ def compile(config, vocab):
 
     optimizer = RMSprop(lr=config['lr'], rho=0.9, epsilon=1e-8)
     model.compile(loss='binary_crossentropy',
-                optimizer='rmsprop',
+                optimizer=optimizer,
                 metrics=['accuracy'])
 
     return model
@@ -170,11 +183,12 @@ def compile(config, vocab):
 
 if __name__ == '__main__':
     data = load_json('output/train-v1.1.small.json')
+    data = [data[0]]
     (vocab, stats) = create_vocab(data)
     config = {
         'hidden_dim': 300,
         'lr': 1e-3,
-        'neg_samples': 10,
+        'neg_samples': 1,
         'surround_size': 10
     }
     config.update(stats)
@@ -183,12 +197,13 @@ if __name__ == '__main__':
 
     print('creating x y')
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
+    print(Y)
 
     model = compile(config, vocab)
 
     print('training starts')
     history = model.fit([CL, CR, Q], Y,
-                        batch_size=64, nb_epoch=3,
+                        batch_size=64, nb_epoch=5,
                         verbose=1
                         )
 
