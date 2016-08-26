@@ -68,9 +68,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                 if not test:
                     for answer in qa['answers']:
                         X.append(extract(answer['answer_start'], answer['text.tokens']) + (1.,))
-                    # spans = choice(all_spans, neg_samples, replace=True)
-                    spans = all_spans
-                    print(len(all_spans))
+                    spans = choice(all_spans, neg_samples, replace=True)
+                    #spans = all_spans
                 if test:
                     spans = all_spans
                 for span in spans:
@@ -164,8 +163,8 @@ def compile(config, vocab):
     x = merge([x_cl, x_cr, x_q], mode='concat')
     #x = merge([x_cl, x_cr, x_q], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
     #          output_shape=lambda input_shape: (input_shape[0], 1))
-    x = Dense(1000, activation='relu')(x)
-    x = Dense(1000, activation='relu')(x)
+    x = Dense(100, activation='relu')(x)
+    x = Dense(100, activation='relu')(x)
     x = Dense(1, activation='sigmoid')(x)
 
     model = Model(input=[input_cl, input_cr, input_q], output=x)
@@ -187,7 +186,7 @@ if __name__ == '__main__':
     config = {
         'hidden_dim': 300,
         'lr': 1e-4,
-        'neg_samples': 1,
+        'neg_samples': 10,
         'surround_size': 10
     }
     config.update(stats)
@@ -195,15 +194,18 @@ if __name__ == '__main__':
     pprint(config)
 
     print('creating x y')
-    (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
 
     model = compile(config, vocab)
 
     print('training starts')
-    history = model.fit([CL, CR, Q], Y,
-                        batch_size=64, nb_epoch=50,
-                        verbose=1
-                        )
+    num_epoch = 100
+    for epoch in range(num_epoch):
+        print('epoch', epoch)
+        (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
+        history = model.fit([CL, CR, Q], Y,
+                            batch_size=64, nb_epoch=1,
+                            verbose=1
+                            )
 
     predictions = predict_span(model, data, vocab, config)
     print('predicing')
