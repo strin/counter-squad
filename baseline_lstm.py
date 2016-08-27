@@ -40,6 +40,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                 # extract question.
                 q = np.zeros(max_q)
                 for (i, word) in enumerate(qa['question.tokens']):
+                    if i >= len(q):
+                        break
                     q[i] = vocab[word]
 
                 def extract(pos, span):
@@ -47,6 +49,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     # extract span.
                     s = np.zeros(max_span)
                     for (i, word) in enumerate(span):
+                        if i >= len(s):
+                            break
                         s[i] = vocab[word]
                     print_sentence('span', s)
                     # extract context left.
@@ -89,9 +93,6 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     X.append(extract(pos, span) + (0.,))
 
     except Exception as e:
-        print('context', context)
-        print('answer', answer)
-        print('span', span)
         print(e.message)
         traceback.print_exc()
         import pdb; pdb.set_trace();
@@ -181,7 +182,10 @@ def compile(config, vocab):
 
 if __name__ == '__main__':
     data = load_json('output/train-v1.1.small.json')
-    data = data[:1]
+    dev_data = load_json('output/dev-v1.1.small.json')
+    # data = data[:10]
+    # dev_data = dev_data[:10]
+
     (vocab, stats) = create_vocab(data)
     config = {
         'hidden_dim': 300,
@@ -207,9 +211,11 @@ if __name__ == '__main__':
                             verbose=1
                             )
 
-    predictions = predict_span(model, data, vocab, config)
+    predictions = predict_span(model, dev_data, vocab, config)
     print('predicing')
     pprint(predictions)
+
+    write_json(predictions, 'output/predictions.small.json')
 
 
 

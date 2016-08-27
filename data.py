@@ -332,6 +332,7 @@ def create_vocab(data):
         for spans in paragraph['spans']:
             new_span = []
             for span in spans:
+                update_vocab(span)
                 if len(span) > stats['max_span']:
                     continue
                 new_span.append(span)
@@ -367,7 +368,7 @@ def filter_vocab(data, vocab, stats):
             for span in spans:
                 if len(span) > stats['max_span']:
                     continue
-                new_span.append(span)
+                new_span.append(map(filter_word, span))
             new_spans.append(new_span)
         paragraph['spans'] = new_spans
     return data
@@ -377,7 +378,7 @@ if __name__ == '__main__':
     loader = Loader('data/dev-v1.1.json')
     data = merge_paragraphs(loader.data)
     print('data size', len(data))
-    # data = data[:1000]
+    data = data[:100]
     print('validating')
     validate_answer_start(data)
     print('cleaning data')
@@ -386,4 +387,4 @@ if __name__ == '__main__':
     data = tokenize_paragraphs(data)
     print(data[0])
     data = extract_constituents_spans(data)
-    write_json(data, 'output/dev-v1.1.json')
+    write_json(data, 'output/dev-v1.1.small.json')
