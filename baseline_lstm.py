@@ -17,6 +17,7 @@ import random
 
 word2vec = KeyValueStore('word2vec')
 
+
 def create_x_y(data, vocab, stats, test=False, verbose=False):
     ''' create input-output pairs for neural network training
     the input is (#examples,
@@ -32,6 +33,12 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
         if verbose:
             print(name, [ivocab[v] for v in sen])
 
+    def map_vocab(word):
+        if word in vocab:
+            return vocab[word]
+        else:
+            return vocab['<unk>']
+
     try:
         for paragraph in data:
             context = paragraph['context.tokens']
@@ -42,7 +49,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                 for (i, word) in enumerate(qa['question.tokens']):
                     if i >= len(q):
                         break
-                    q[i] = vocab[word]
+                    q[i] = map_vocab(word)
 
                 def extract(pos, span):
                     print_sentence('question', q)
@@ -51,7 +58,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     for (i, word) in enumerate(span):
                         if i >= len(s):
                             break
-                        s[i] = vocab[word]
+                        s[i] = map_vocab(word)
                     print_sentence('span', s)
                     # extract context left.
                     answer_start = pos
@@ -60,12 +67,12 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     for i in range(surround_size):
                         ind = answer_start - 1 - i
                         if ind >= 0:
-                            cl[i] = vocab[context[ind]]
+                            cl[i] = map_vocab(context[ind])
                     print_sentence('cl', cl)
                     for i in range(surround_size):
                         ind = answer_start + len(span) + i
                         if ind < len(context):
-                            cr[i] = vocab[context[ind]]
+                            cr[i] = map_vocab(context[ind])
                     print_sentence('cr', cr)
                     return (s, q, cl, cr)
 
@@ -77,18 +84,6 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                 if test:
                     spans = all_spans
                 for span in spans:
-                    def replace(l, ws, wt):
-                        new_l = []
-                        for w in l:
-                            if w == ws:
-                                new_l.append(wt)
-                            else:
-                                new_l.append(w)
-                        return new_l
-                    span = replace(span, '-LRB-', '(')
-                    span = replace(span, '-RRB-', ')')
-                    span = replace(span, '-LSB-', '[')
-                    span = replace(span, '-RSB-', ']')
                     pos = locate(context, span)
                     X.append(extract(pos, span) + (0.,))
 
@@ -108,6 +103,12 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     return (S, Q, CL, CR, Y)
 
 
+def lexicalize(span):
+    span = ' '.join(span)
+    span = span.replace(' \'s', '\'s')
+    return span
+
+
 def predict_span(model, data, vocab, config):
     data = filter_vocab(data, vocab, config)
     (S, Q, CL, CR, Y) = create_x_y(data, vocab, config, test=True)
@@ -121,6 +122,7 @@ def predict_span(model, data, vocab, config):
             probs = all_probs[pt : pt + len(all_spans)]
             pred_ind = np.argmax(probs, axis=0)
             pred_span = all_spans[pred_ind]
+            pred_span = lexicalize(pred_span)
             pt += len(all_spans)
             qid = qa['id']
             predictions[qid] = pred_span
@@ -183,8 +185,8 @@ def compile(config, vocab):
 if __name__ == '__main__':
     data = load_json('output/train-v1.1.small.json')
     dev_data = load_json('output/dev-v1.1.small.json')
-    # data = data[:10]
-    # dev_data = dev_data[:10]
+    data = data[:10]
+    dev_data = dev_data[:10]
 
     (vocab, stats) = create_vocab(data)
     config = {

@@ -9,6 +9,7 @@ from utils import write_json
 import traceback
 import nltk
 from nltk import word_tokenize as nltk_word_tokenize, sent_tokenize
+from utils import replace
 nltk.internals.config_java(options='-xmx16G')
 
 
@@ -335,6 +336,10 @@ def create_vocab(data):
                 update_vocab(span)
                 if len(span) > stats['max_span']:
                     continue
+                span = replace(span, '-LRB-', '(')
+                span = replace(span, '-RRB-', ')')
+                span = replace(span, '-LSB-', '[')
+                span = replace(span, '-RSB-', ']')
                 new_span.append(span)
             new_spans.append(new_span)
         paragraph['spans'] = new_spans
@@ -347,28 +352,18 @@ def create_vocab(data):
 
 def filter_vocab(data, vocab, stats):
     data = deepcopy(data)
-    def filter_word(word):
-        if word not in vocab:
-            return '<unk>'
-        return word
     for (pi, paragraph) in enumerate(data):
-        sentences = paragraph['context.sents']
-        for i, _ in enumerate(sentences):
-            sentences[i] = map(filter_word, sentences[i])
-        paragraph['context.tokens'] = map(filter_word, paragraph['context.tokens'])
-
-        for qa in paragraph['qas']:
-            for answer in qa['answers']:
-                answer['text.tokens'] = map(filter_word, answer['text.tokens'])
-            qa['question.tokens'] = map(filter_word, qa['question.tokens'])
-
         new_spans = []
         for spans in paragraph['spans']:
             new_span = []
             for span in spans:
                 if len(span) > stats['max_span']:
                     continue
-                new_span.append(map(filter_word, span))
+                span = replace(span, '-LRB-', '(')
+                span = replace(span, '-RRB-', ')')
+                span = replace(span, '-LSB-', '[')
+                span = replace(span, '-RSB-', ']')
+                new_span.append(span)
             new_spans.append(new_span)
         paragraph['spans'] = new_spans
     return data

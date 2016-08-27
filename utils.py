@@ -28,3 +28,14 @@ def locate(context, span):
     print(context)
     print(span)
     raise Exception('error, cannot match span in context')
+
+
+def replace(l, ws, wt):
+    new_l = []
+    for w in l:
+        if w == ws:
+            new_l.append(wt)
+        else:
+            new_l.append(w)
+    return new_l
+

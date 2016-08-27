@@ -12,7 +12,7 @@ class Evaluator(object):
         Specify either path or articles. Path should point to the JSON file
         downloaded from the website. Articles is a list of articles as found
         in the data field of the file downloaded from the website.
-        
+
         restrict_to_titles, if specified, should be a set of article titles.
         Only articles with those titles will be used for evaluation.
         """
@@ -82,7 +82,7 @@ class Evaluator(object):
                 total += self.F1Single(question_id, predicted_answer)
 
         return 100.0 * total / len(self._answers)
-  
+
     def F1Single(self, question_id, predicted_answer):
         def GetTokens(text):
             text = Evaluator.CleanAnswer(text)
@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     with open(predictions_path, 'r') as f:
         predictions = json.loads(f.read())
-    
+
     evaluator = Evaluator(dataset_path)
 
     stats = {}
