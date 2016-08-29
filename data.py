@@ -10,7 +10,6 @@ import traceback
 import nltk
 from nltk import word_tokenize as nltk_word_tokenize, sent_tokenize
 from utils import replace
-nltk.internals.config_java(options='-xmx16G')
 
 
 WHITESPACE_AND_PUNCTUATION = set([' ', '.', ',', ':', ';', '!', '?', '$', '%', '(', ')', '[', ']', '-', '`', '\'', '"'])
@@ -249,7 +248,8 @@ def constituents_in_tree(parsetree):
 def create_stanford_parser():
     from nltk.parse.stanford import StanfordParser
     return StanfordParser('/home/durin/software/stanford-parser-full-2015-12-09/stanford-parser.jar',
-                        '/home/durin/software/stanford-parser-full-2015-12-09/stanford-parser-3.6.0-models.jar')
+                        '/home/durin/software/stanford-parser-full-2015-12-09/stanford-parser-3.6.0-models.jar',
+                          java_options='-mx32000m')
 
 
 def extract_constituents_spans(data, CORENLP_IP="0.0.0.0", CORENLP_PORT=3456):
@@ -340,6 +340,8 @@ def create_vocab(data):
                 span = replace(span, '-RRB-', ')')
                 span = replace(span, '-LSB-', '[')
                 span = replace(span, '-RSB-', ']')
+                span = replace(span, '-LCB-', '{')
+                span = replace(span, '-RCB-', '}')
                 new_span.append(span)
             new_spans.append(new_span)
         paragraph['spans'] = new_spans
@@ -363,6 +365,8 @@ def filter_vocab(data, vocab, stats):
                 span = replace(span, '-RRB-', ')')
                 span = replace(span, '-LSB-', '[')
                 span = replace(span, '-RSB-', ']')
+                span = replace(span, '-LCB-', '{')
+                span = replace(span, '-RCB-', '}')
                 new_span.append(span)
             new_spans.append(new_span)
         paragraph['spans'] = new_spans
@@ -370,10 +374,10 @@ def filter_vocab(data, vocab, stats):
 
 
 if __name__ == '__main__':
-    loader = Loader('data/dev-v1.1.json')
+    loader = Loader('data/train-v1.1.json')
     data = merge_paragraphs(loader.data)
     print('data size', len(data))
-    data = data[:100]
+    #data = data[:100]
     print('validating')
     validate_answer_start(data)
     print('cleaning data')
@@ -382,4 +386,4 @@ if __name__ == '__main__':
     data = tokenize_paragraphs(data)
     print(data[0])
     data = extract_constituents_spans(data)
-    write_json(data, 'output/dev-v1.1.small.json')
+    write_json(data, 'output/train-v1.1.json')

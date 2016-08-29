@@ -183,10 +183,10 @@ def compile(config, vocab):
 
 
 if __name__ == '__main__':
-    data = load_json('output/train-v1.1.small.json')
-    dev_data = load_json('output/dev-v1.1.small.json')
-    data = data[:10]
-    dev_data = dev_data[:10]
+    data = load_json('output/dev-v1.1.json')
+    dev_data = load_json('output/dev-v1.1.json')
+    #data = data[:10]
+    #dev_data = dev_data[:10]
 
     (vocab, stats) = create_vocab(data)
     config = {
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     model = compile(config, vocab)
 
     print('training starts')
-    num_epoch = 100
+    num_epoch = 3
     for epoch in range(num_epoch):
         print('epoch', epoch)
         (S, Q, CL, CR, Y) = create_x_y(data, vocab, config)
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     print('predicing')
     pprint(predictions)
 
-    write_json(predictions, 'output/predictions.small.json')
+    write_json(predictions, 'output/predictions.json')
 
 
 
