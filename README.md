@@ -1,2 +1,2 @@
-# Cracking Stanford QA
+# Stanford QA
 
