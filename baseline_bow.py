@@ -4,12 +4,10 @@ from pprint import pprint
 from data import create_vocab, filter_vocab
 from utils import load_json, write_json, create_idict, choice, locate
 from db import KeyValueStore
-from evaluate import Evaluator
 import numpy as np
 import traceback
 from keras.layers import Input, merge
 from keras.layers.embeddings import Embedding
-from keras.layers.recurrent import LSTM
 from keras.layers.core import Lambda, Dense
 from keras.engine.topology import Merge
 from keras.models import Sequential, Model
@@ -31,7 +29,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
     neg_samples = stats['neg_samples']
     ivocab = create_idict(vocab)
     X = []
-    verbose=0
+    verbose=1
     def print_sentence(name, sen):
         if verbose:
             print(name, ' '.join([ivocab[v] for v in sen if v]))
@@ -55,8 +53,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     q[i] = map_vocab(word)
 
                 def extract(pos, span, is_answer=False):
-                    if verbose:
-                        print('is_answer', is_answer)
+                    print('is_answer', is_answer)
                     print_sentence('question', q)
                     # extract span.
                     s = np.zeros(max_span)
@@ -82,6 +79,8 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     if verbose:
                         print()
 
+                    if is_answer:
+                        import pdb; pdb.set_trace();
                     return (s, q, cl, cr)
 
                 if not test:
@@ -155,25 +154,22 @@ def compile(config, vocab):
             word_weights[wi] = np.array(word2vec['<unk>'])
         else:
             word_weights[wi] = np.array(vec)
-    embed_layer = Embedding(vocab_size, hidden_dim, weights=[word_weights], mask_zero=True)
+    embed_layer = Embedding(vocab_size, hidden_dim, weights=[word_weights])
     sum_layer = Lambda(lambda emb: K.sum(emb, axis=1), output_shape=lambda input_shape: (input_shape[0], input_shape[2]))
     model_cl = Sequential()
     input_cl = Input(shape=(config['surround_size'],), name='in_cl')
     x_cl = embed_layer(input_cl)
-    # x_cl = sum_layer(x_cl)
-    x_cl = LSTM(hidden_dim)(x_cl)
+    x_cl = sum_layer(x_cl)
     #model_cl.add(Lambda(lambda emb: K.sum(emb, axis=1),
     #                    output_shape=lambda input_shape: (input_shape[0], input_shape[2])
     #            ))
     input_cr = Input(shape=(config['surround_size'],), name='in_cr')
     x_cr = embed_layer(input_cr)
-    # x_cr = sum_layer(x_cr)
-    x_cr = LSTM(hidden_dim)(x_cr)
+    x_cr = sum_layer(x_cr)
 
     input_q = Input(shape=(config['max_q'],), name='in_q')
     x_q = embed_layer(input_q)
-    # x_q = sum_layer(x_q)
-    x_q = LSTM(hidden_dim)(x_q)
+    x_q = sum_layer(x_q)
 
     #x = merge([x_cl, x_cr, x_q], mode='concat')
     x = merge([x_cl, x_cr, x_q], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
@@ -202,17 +198,15 @@ def compile(config, vocab):
 
 
 if __name__ == '__main__':
-    data = load_json('output/train-v1.1.small.json')
+    data = load_json('output/dev-v1.1.json')
     dev_data = load_json('output/dev-v1.1.json')
-
-    data = data[:100]
-    dev_data = dev_data[:100]
-    evaluator = Evaluator(dev_data)
+    data = data[:10]
+    dev_data = dev_data[:10]
 
     (vocab, stats) = create_vocab(data)
     config = {
         'hidden_dim': 300,
-        'lr': 1e-5,
+        'lr': 1e-4,
         'neg_samples': 10,
         'surround_size': 10
     }
@@ -233,13 +227,12 @@ if __name__ == '__main__':
                             batch_size=64, nb_epoch=1,
                             verbose=1
                             )
-        print('num examples seen', epoch * len(Y))
 
-        if epoch % 1 == 0:
-            predictions = predict_span(model, dev_data, vocab, config)
-            print('predicing')
-            pprint(predictions)
-            print('F1', evaluator.F1(predictions), 'Exact Match', evaluator.ExactMatch(predictions))
+    predictions = predict_span(model, dev_data, vocab, config)
+    print('predicing')
+    pprint(predictions)
+
+    write_json(predictions, 'output/predictions.json')
 
 
 
