@@ -2,7 +2,8 @@ from __future__ import print_function
 from __init__ import *
 from pprint import pprint
 from data import create_vocab, filter_vocab
-from utils import load_json, write_json, create_idict, choice, locate
+from utils import (load_json, write_json, create_idict, choice,
+                   locate, mkdir_if_not_exist, Checkpoint)
 from db import KeyValueStore
 from evaluate import Evaluator
 import numpy as np
@@ -166,21 +167,14 @@ def compile(config, vocab):
     model_cl = Sequential()
     input_cl = Input(shape=(config['surround_size'],), name='in_cl')
     x_cl = embed_layer(input_cl)
-    # x_cl = sum_layer(x_cl)
-    x_cl = LSTM(hidden_dim)(x_cl)
-    #model_cl.add(Lambda(lambda emb: K.sum(emb, axis=1),
-    #                    output_shape=lambda input_shape: (input_shape[0], input_shape[2])
-    #            ))
+
     input_cr = Input(shape=(config['surround_size'],), name='in_cr')
     x_cr = embed_layer(input_cr)
-    # x_cr = sum_layer(x_cr)
-    x_cr = LSTM(hidden_dim)(x_cr)
 
     input_q = Input(shape=(config['max_q'],), name='in_q')
     x_q = embed_layer(input_q)
-    # x_q = sum_layer(x_q)
+
     x_qs = LSTM(hidden_dim)(x_q)
-    x_qc = LSTM(hidden_dim)(x_q)
 
     input_s = Input(shape=(config['max_span'],), name='in_s')
     x_s = embed_layer(input_s)
@@ -195,7 +189,23 @@ def compile(config, vocab):
     # similarity between span and question.
     comp_s = merge([x_s, x_qs], mode=lambda (s, q): K.sum(s * q, axis=1, keepdims=True),
               output_shape=lambda input_shape: (input_shape[0][0], 1))
-    comp_c = merge([x_cl, x_cr, x_qc], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
+    def match_c_q(args):
+        cl, cr, q = args
+        c = (cl + cr) / 2.0
+        c += 1e-4
+        q += 1e-4
+        norm_q = K.sqrt(K.sum(q * q, axis=2, keepdims=True))
+        norm_c = K.sqrt(K.sum(c * c, axis=2, keepdims=True))
+        cos_sim = (K.batch_dot(q, c, axes=2) / K.batch_dot(
+                norm_q, norm_c,
+                axes=2
+              )) # compute cosine similarity.
+        cos_sim = K.batch_dot(norm_q > 1e-4, norm_c > 1e-4, axes=2) * cos_sim # ignore zeros.
+        # senlen = K.sum(K.sum(norm_q > 1e-4, axis=2), axis=1)
+        cos_score = K.sum(K.max(cos_sim, axis=2), axis=1, keepdims=True)
+        return cos_score
+
+    comp_c = merge([x_cl, x_cr, x_q], mode=match_c_q,
               output_shape=lambda input_shape: (input_shape[0][0], 1))
     comp = merge([comp_s, comp_c], mode='concat')
     x = Dense(1, activation='sigmoid')(comp)
@@ -223,6 +233,7 @@ def compile(config, vocab):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='lstm baseline for QA on squad dataset.')
     parser.add_argument('--mode', type=str, default='full')
+    parser.add_argument('--output', type=str, default='results/default')
     args = parser.parse_args()
 
     #data = load_json('output/train-v1.1.small.json')
@@ -256,6 +267,8 @@ if __name__ == '__main__':
 
     print('training starts')
     num_epoch = 100
+    checkpoint = Checkpoint(args.output)
+
     for epoch in range(num_epoch):
         print('epoch', epoch)
         batch = create_x_y(data, vocab, config)
@@ -269,9 +282,15 @@ if __name__ == '__main__':
 
         if (epoch + 1) % 20 == 0:
             predictions = predict_span(model, dev_data, vocab, config)
+            f1 = evaluator.F1(predictions)
+            match = evaluator.ExactMatch(predictions)
             print('predicing')
             pprint(predictions)
-            print('F1', evaluator.F1(predictions), 'Exact Match', evaluator.ExactMatch(predictions))
+            checkpoint.log(epoch, {
+                'predictions': predictions,
+                'F1': match
+            })
+            print('F1', f1, 'Exact Match', match)
 
 
 

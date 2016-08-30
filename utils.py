@@ -1,6 +1,7 @@
 from __future__ import print_function
 import json
 import numpy.random as npr
+import os
 
 def load_json(path):
     with open(path, 'r') as f:
@@ -38,4 +39,21 @@ def replace(l, ws, wt):
         else:
             new_l.append(w)
     return new_l
+
+
+def mkdir_if_not_exist(path):
+    if path == '':
+        return
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+
+
+class Checkpoint(object):
+    def __init__(self, dirname):
+        mkdir_if_not_exist(dirname)
+
+
+    def log(self, it, obj):
+        write_json(obj, os.path.join(dirname, 'checkpoint_%d' % it))
 
