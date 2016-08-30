@@ -67,6 +67,18 @@ It's wrong to encode left context sentence in reverse order.
 ```
 Full-sized vs. Full size.
 
+### Normalization error
+
+```
+ u'5733a6ac4776f41900660f58': u'tamara de lempicka',
+ u'5733a6ac4776f41900660f59': u'tamara de lempicka',
+ u'5733a6ac4776f41900660f5a': u'tamara de lempicka',
+ u'5733a6ac4776f41900660f5b': u'tamara de lempicka',
+ u'5733a6ac4776f41900660f5c': u'tamara de lempicka'
+```
+
+Some spans occur to be the answer to multiple questions.
+
 ### ?
 
 It appears that for a lot of questions, LSTM matches the span with keywords in the sentence.

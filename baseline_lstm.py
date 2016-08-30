@@ -90,8 +90,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     for answer in qa['answers']:
                         X.append(extract(answer['answer_start'],
                                 answer['text.tokens'], is_answer=True) + (1.,))
-                    spans = choice(all_spans, neg_samples, replace=True)
-                    #spans = all_spans
+                    spans = choice(all_spans, neg_samples * len(qa['answers']), replace=True)
                 if test:
                     spans = all_spans
                 for span in spans:
@@ -234,6 +233,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='lstm baseline for QA on squad dataset.')
     parser.add_argument('--mode', type=str, default='full')
     parser.add_argument('--output', type=str, default='results/default')
+    parser.add_argument('--lag', type=int, default=20)
     args = parser.parse_args()
 
     #data = load_json('output/train-v1.1.small.json')
@@ -280,7 +280,7 @@ if __name__ == '__main__':
                             )
         print('num examples seen', epoch * len(Y))
 
-        if (epoch + 1) % 20 == 0:
+        if (epoch + 1) % args.lag == 0:
             predictions = predict_span(model, dev_data, vocab, config)
             f1 = evaluator.F1(predictions)
             match = evaluator.ExactMatch(predictions)

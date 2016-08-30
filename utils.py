@@ -51,9 +51,10 @@ def mkdir_if_not_exist(path):
 
 class Checkpoint(object):
     def __init__(self, dirname):
+        self.dirname = dirname
         mkdir_if_not_exist(dirname)
 
 
     def log(self, it, obj):
-        write_json(obj, os.path.join(dirname, 'checkpoint_%d' % it))
+        write_json(obj, os.path.join(self.dirname, 'checkpoint_%d' % it))
 
