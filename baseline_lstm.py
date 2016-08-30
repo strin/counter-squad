@@ -156,7 +156,7 @@ def compile(config, vocab):
             continue
         vec = word2vec[word]
         if not vec:
-            print('warning: word2vec OOV', word)
+            #print('warning: word2vec OOV', word)
             word_weights[wi] = np.array(word2vec['<unk>'])
         else:
             word_weights[wi] = np.array(vec)
@@ -178,26 +178,28 @@ def compile(config, vocab):
     input_q = Input(shape=(config['max_q'],), name='in_q')
     x_q = embed_layer(input_q)
     # x_q = sum_layer(x_q)
-    x_q = LSTM(hidden_dim)(x_q)
+    x_qs = LSTM(hidden_dim)(x_q)
+    x_qc = LSTM(hidden_dim)(x_q)
 
     input_s = Input(shape=(config['max_span'],), name='in_s')
     x_s = embed_layer(input_s)
     x_s = LSTM(hidden_dim)(x_s)
 
     # use fc layers.
-    x = merge([x_s, x_cl, x_cr, x_q], mode='concat')
-    x = Dense(100, activation='relu')(x)
-    x = Dense(100, activation='relu')(x)
+    #x = merge([x_s, x_cl, x_cr, x_q], mode='concat')
+    #x = Dense(300, activation='relu')(x)
+    #x = Dense(300, activation='relu')(x)
+    #x = Dense(1, activation='sigmoid')(x)
 
     # similarity between span and question.
-    #x = merge([x_s, x_q], mode=lambda (s, q): K.sum(s * q, axis=1, keepdims=True),
-    #          output_shape=lambda input_shape: (input_shape[0], 1))
+    comp_s = merge([x_s, x_qs], mode=lambda (s, q): K.sum(s * q, axis=1, keepdims=True),
+              output_shape=lambda input_shape: (input_shape[0][0], 1))
+    comp_c = merge([x_cl, x_cr, x_qc], mode=lambda (cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
+              output_shape=lambda input_shape: (input_shape[0][0], 1))
+    comp = merge([comp_s, comp_c], mode='concat')
+    x = Dense(1, activation='sigmoid')(comp)
 
-    #x = merge([x_s, x_cl, x_cr, x_q], mode=lambda (s, cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
-    #          output_shape=lambda input_shape: (input_shape[0], 1))
-
-    x = Dense(1, activation='sigmoid')(x)
-
+    # construct the model.
     model = Model(input=[input_s, input_cl, input_cr, input_q], output=x)
 
     model.summary()
@@ -218,11 +220,12 @@ def compile(config, vocab):
 
 
 if __name__ == '__main__':
-    data = load_json('output/train-v1.1.small.json')
+    #data = load_json('output/train-v1.1.small.json')
+    data = load_json('output/train-v1.1.json')
     dev_data = load_json('output/dev-v1.1.json')
 
-    data = data[:100]
-    dev_data = dev_data[:100]
+    #data = data[:100]
+    #dev_data = dev_data[:100]
     evaluator = Evaluator(dev_data)
 
     (vocab, stats) = create_vocab(data)
@@ -255,7 +258,7 @@ if __name__ == '__main__':
                             )
         print('num examples seen', epoch * len(Y))
 
-        if (epoch + 1) % 20 == 0:
+        if (epoch + 1) % 5 == 0:
             predictions = predict_span(model, dev_data, vocab, config)
             print('predicing')
             pprint(predictions)
