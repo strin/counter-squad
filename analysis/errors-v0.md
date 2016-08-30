@@ -42,6 +42,19 @@ In general, the model learns the type of questions well. For example, `which ven
 
 This can be solved by matching for example `california` to `san francisco bay area`.
 
+### Wrong LSTM Ordering
+
+It's wrong to encode left context sentence in reverse order.
+
+```
+[f1] 0.111111111111
+[id] 57275339dd62a815002e9b28
+[question] what were the first two stations to carry abc's programming?
+[u'wabc-tv and wpvi-tv', u'wabc-tv and wpvi-tv', u'wabc-tv and wpvi-tv']
+[prediction] 49 states , the district of columbia , four u.s possessions , bermuda and saba
+[context] since its inception, abc has had many affiliated stations, which include wabc-tv and wpvi-tv, the first two stations to carry the network's programming. as of march 2015[update], abc has eight owned-and-operated stations, and current and pending affiliation agreements with 235 additional television stations encompassing 49 states, the district of columbia, four u.s. possessions, bermuda and saba; this makes abc the largest u.s. broadcast television network by total number of affiliates. the network has an estimated national reach of 96.26% of all households in the united states (or 300,794,157 americans with at least one television set).
+```
+
 ### Errors caused by tokenization.
 
 ```

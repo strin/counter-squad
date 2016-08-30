@@ -16,6 +16,7 @@ from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
 import keras.backend as K
 import random
+import argparse
 
 word2vec = KeyValueStore('word2vec')
 
@@ -70,7 +71,7 @@ def create_x_y(data, vocab, stats, test=False, verbose=False):
                     cl = np.zeros(surround_size)
                     cr = np.zeros(surround_size)
                     for i in range(surround_size):
-                        ind = answer_start - 1 - i
+                        ind = answer_start - surround_size + i
                         if ind >= 0:
                             cl[i] = map_vocab(context[ind])
                     print_sentence('cl', cl)
@@ -220,12 +221,20 @@ def compile(config, vocab):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='lstm baseline for QA on squad dataset.')
+    parser.add_argument('--mode', type=str, default='full')
+    args = parser.parse_args()
+
     #data = load_json('output/train-v1.1.small.json')
     data = load_json('output/train-v1.1.json')
     dev_data = load_json('output/dev-v1.1.json')
 
-    #data = data[:100]
-    #dev_data = dev_data[:100]
+    if args.mode == 'tiny':
+        data = data[:10]
+        dev_data = dev_data[:10]
+    if args.mode == 'small':
+        data = data[:100]
+        dev_data = dev_data[:100]
     evaluator = Evaluator(dev_data)
 
     (vocab, stats) = create_vocab(data)
@@ -258,7 +267,7 @@ if __name__ == '__main__':
                             )
         print('num examples seen', epoch * len(Y))
 
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % 20 == 0:
             predictions = predict_span(model, dev_data, vocab, config)
             print('predicing')
             pprint(predictions)
