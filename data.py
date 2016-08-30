@@ -301,12 +301,15 @@ def extract_qa_sent(data):
     return data
 
 
-def create_vocab(data):
+def create_vocab(data, init_vocab=None):
     stats = {}
-    vocab = {
-        '<none>': 0,
-        '<unk>': 1
-    }
+    if not init_vocab:
+        vocab = {
+            '<none>': 0,
+            '<unk>': 1
+        }
+    else:
+        vocab = init_vocab
 
     stats['max_span'] = 0
     stats['max_q'] = 0

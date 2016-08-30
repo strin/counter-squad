@@ -1,5 +1,4 @@
 from __future__ import print_function
-from __init__ import *
 from pprint import pprint
 from data import create_vocab, filter_vocab
 from utils import load_json, write_json, create_idict, choice, locate
@@ -7,14 +6,6 @@ from db import KeyValueStore
 from evaluate import Evaluator
 import numpy as np
 import traceback
-from keras.layers import Input, merge
-from keras.layers.embeddings import Embedding
-from keras.layers.recurrent import LSTM
-from keras.layers.core import Lambda, Dense
-from keras.engine.topology import Merge
-from keras.models import Sequential, Model
-from keras.optimizers import RMSprop
-import keras.backend as K
 import random
 
 word2vec = KeyValueStore('word2vec')
@@ -123,98 +114,59 @@ def lexicalize(span):
     return span
 
 
-def predict_span(model, data, vocab, config):
+def predict_span(data, vocab, config):
     data = filter_vocab(data, vocab, config)
-    (S, Q, CL, CR, Y) = unpack_x_y(create_x_y(data, vocab, config, test=True))
-    all_probs = model.predict([S, CL, CR, Q])
+    dataset = create_x_y(data, vocab, config, test=True)
+    embedding = np.zeros((len(vocab), config['hidden_dim']))
+    for word in vocab:
+        if word == '<none>':
+            continue
+        if word not in word2vec:
+            word = '<unk>'
+        embedding[vocab[word]] = np.array(word2vec[word])
+
     pt = 0
     predictions = {}
+    datap = 0
+
+    ivocab = create_idict(vocab)
+    X = []
+    verbose=0
+    def print_sentence(name, sen):
+        print(name, ' '.join([ivocab[v] for v in sen if v]))
+
     for paragraph in data:
         context = paragraph['context.tokens']
         all_spans = sum(paragraph['spans'], [])
         for qa in paragraph['qas']:
-            probs = all_probs[pt : pt + len(all_spans)]
-            pred_ind = np.argmax(probs, axis=0)
+            scores = []
+            for (si, span) in enumerate(all_spans):
+                (s, q, cl, cr, y) = dataset[datap + si]
+                emb_q = np.mean(embedding[q.astype(int)], axis=0)
+                emb_cl = np.mean(embedding[cl.astype(int)], axis=0)
+                emb_cr = np.mean(embedding[cr.astype(int)], axis=0)
+                emb_c = (emb_cl + emb_cr) / 2.
+                sim = np.dot(emb_q, emb_c)
+                scores.append(sim)
+            pred_ind = np.argmax(scores, axis=0)
             pred_span = all_spans[pred_ind]
             pred_span = lexicalize(pred_span)
+            for (si, (span, score)) in enumerate(zip(all_spans, scores)):
+                print('[', lexicalize(span), ']', score)
+                (s, q, cl, cr, y) = dataset[datap + si]
+                print_sentence('cl', cl)
+                print_sentence('cr', cr)
+                print_sentence('cl', s)
+                print()
+
+            pprint(qa)
+            print('span', pred_span)
+            import pdb; pdb.set_trace();
             pt += len(all_spans)
             qid = qa['id']
             predictions[qid] = pred_span
+            datap += len(all_spans)
     return predictions
-
-
-def compile(config, vocab):
-    hidden_dim = config['hidden_dim']
-    lr = config['lr']
-    vocab_size = len(vocab)
-    print('vocab size', vocab_size)
-    print('initializing weights from db')
-    word_weights = np.zeros((vocab_size, hidden_dim))
-    for word in vocab:
-        wi = vocab[word]
-        if word == '<none>':
-            continue
-        vec = word2vec[word]
-        if not vec:
-            print('warning: word2vec OOV', word)
-            word_weights[wi] = np.array(word2vec['<unk>'])
-        else:
-            word_weights[wi] = np.array(vec)
-    embed_layer = Embedding(vocab_size, hidden_dim, weights=[word_weights], mask_zero=True)
-    sum_layer = Lambda(lambda emb: K.sum(emb, axis=1), output_shape=lambda input_shape: (input_shape[0], input_shape[2]))
-    model_cl = Sequential()
-    input_cl = Input(shape=(config['surround_size'],), name='in_cl')
-    x_cl = embed_layer(input_cl)
-    # x_cl = sum_layer(x_cl)
-    x_cl = LSTM(hidden_dim)(x_cl)
-    #model_cl.add(Lambda(lambda emb: K.sum(emb, axis=1),
-    #                    output_shape=lambda input_shape: (input_shape[0], input_shape[2])
-    #            ))
-    input_cr = Input(shape=(config['surround_size'],), name='in_cr')
-    x_cr = embed_layer(input_cr)
-    # x_cr = sum_layer(x_cr)
-    x_cr = LSTM(hidden_dim)(x_cr)
-
-    input_q = Input(shape=(config['max_q'],), name='in_q')
-    x_q = embed_layer(input_q)
-    # x_q = sum_layer(x_q)
-    x_q = LSTM(hidden_dim)(x_q)
-
-    input_s = Input(shape=(config['max_span'],), name='in_s')
-    x_s = embed_layer(input_s)
-    x_s = LSTM(hidden_dim)(x_s)
-
-    # use fc layers.
-    x = merge([x_s, x_cl, x_cr, x_q], mode='concat')
-    x = Dense(100, activation='relu')(x)
-    x = Dense(100, activation='relu')(x)
-
-    # similarity between span and question.
-    #x = merge([x_s, x_q], mode=lambda (s, q): K.sum(s * q, axis=1, keepdims=True),
-    #          output_shape=lambda input_shape: (input_shape[0], 1))
-
-    #x = merge([x_s, x_cl, x_cr, x_q], mode=lambda (s, cl, cr, q): K.sum((cl + cr) * q, axis=1, keepdims=True),
-    #          output_shape=lambda input_shape: (input_shape[0], 1))
-
-    x = Dense(1, activation='sigmoid')(x)
-
-    model = Model(input=[input_s, input_cl, input_cr, input_q], output=x)
-
-    model.summary()
-
-    optimizer = RMSprop(lr=config['lr'], rho=0.9, epsilon=1e-8)
-    model.compile(loss='binary_crossentropy',
-                optimizer=optimizer,
-                metrics=['accuracy'])
-
-    return model, {
-        'input_cl': input_cl,
-        'input_cr': input_cr,
-        'input_q': input_q,
-        'x_cr': x_cr,
-        'x_cl': x_cl,
-        'x_q': x_q
-    }
 
 
 if __name__ == '__main__':
@@ -238,28 +190,10 @@ if __name__ == '__main__':
     print('config = ')
     pprint(config)
 
-    print('creating x y')
-
-    model, meta = compile(config, vocab)
-
-    print('training starts')
-    num_epoch = 100
-    for epoch in range(num_epoch):
-        print('epoch', epoch)
-        batch = create_x_y(data, vocab, config)
-        random.shuffle(batch)
-        (S, Q, CL, CR, Y) = unpack_x_y(batch)
-        history = model.fit([S, CL, CR, Q], Y,
-                            batch_size=64, nb_epoch=1,
-                            verbose=1
-                            )
-        print('num examples seen', epoch * len(Y))
-
-        if (epoch + 1) % 20 == 0:
-            predictions = predict_span(model, dev_data, vocab, config)
-            print('predicing')
-            pprint(predictions)
-            print('F1', evaluator.F1(predictions), 'Exact Match', evaluator.ExactMatch(predictions))
+    predictions = predict_span(dev_data, vocab, config)
+    print('predicing')
+    pprint(predictions)
+    print('F1', evaluator.F1(predictions), 'Exact Match', evaluator.ExactMatch(predictions))
 
 
 
